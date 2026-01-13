@@ -100,7 +100,7 @@ if prompt := st.chat_input("Nhập câu hỏi của bạn ở đây..."):
         }
         
         model = genai.GenerativeModel(
-            model_name="gemini-pro",
+            model_name="gemini-1.5-flash",
             generation_config=generation_config,
             system_instruction=SYSTEM_PROMPT
         )
@@ -125,5 +125,6 @@ if prompt := st.chat_input("Nhập câu hỏi của bạn ở đây..."):
     except Exception as e:
 
         st.error(f"Đã xảy ra lỗi: {e}")
+
 
 
