@@ -3,102 +3,104 @@ import requests
 import json
 
 # =========================================================
-# 1. CẤU HÌNH HỆ THỐNG
+# CẤU HÌNH: DÙNG BẢN GEMINI PRO (1.0) CHUẨN QUỐC TẾ
+# (Bản này tương thích với mọi loại tài khoản cũ/mới)
 # =========================================================
 
 SYSTEM_PROMPT = """
 Bạn là "Văn Sĩ Số", trợ lý AI sư phạm hỗ trợ Ngữ văn THCS.
 NHIỆM VỤ:
-1. Gợi ý dàn ý, ý tưởng (Brainstorming), KHÔNG viết văn mẫu trọn vẹn.
+1. Gợi ý dàn ý, ý tưởng (Brainstorming).
 2. Sửa lỗi diễn đạt, trau chuốt câu từ.
-3. Nhập vai nhân vật văn học nếu được yêu cầu.
-4. Giọng điệu: Thân thiện với học sinh, trang trọng với giáo viên.
+3. Giọng điệu: Thân thiện, sư phạm.
 """
 
-st.set_page_config(page_title="Văn Sĩ Số - Trợ lý Ngữ Văn", page_icon="✍️", layout="wide")
+st.set_page_config(page_title="Văn Sĩ Số", page_icon="✍️")
 
 # =========================================================
-# 2. GIAO DIỆN & CẤU HÌNH
+# GIAO DIỆN
 # =========================================================
 
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/3238/3238016.png", width=100)
-    st.title("⚙️ Cấu hình")
+    st.title("⚙️ Cài đặt")
+    api_key = st.text_input("Nhập API Key:", type="password")
     
-    # Nhập API Key
-    api_key = st.text_input("Nhập Gemini API Key mới:", type="password")
-    st.caption("Hãy dùng Key từ tài khoản Google mới để đảm bảo không bị lỗi.")
+    # Thêm nút chọn phiên bản để thầy/cô tự đổi nếu lỗi
+    model_choice = st.selectbox(
+        "Chọn phiên bản AI:", 
+        ["gemini-pro", "gemini-1.5-flash"],
+        index=0 # Mặc định chọn gemini-pro (An toàn nhất)
+    )
     
-    st.divider()
-    mode = st.radio("Bạn là ai?", ["Học sinh 🎓", "Giáo viên 👩‍🏫"])
-    
-    if st.button("Xóa hội thoại"):
+    st.info("Mẹo: Nếu bản này lỗi, hãy thử đổi sang bản kia.")
+    if st.button("Xóa lịch sử"):
         st.session_state.messages = []
         st.rerun()
 
-st.title("✍️ Văn Sĩ Số - Khơi Nguồn Cảm Hứng")
-st.caption("Phiên bản Kết nối Trực tiếp (Direct API)")
+st.title("✍️ Văn Sĩ Số")
+st.caption(f"Đang chạy phiên bản: {model_choice}")
 
 # =========================================================
-# 3. XỬ LÝ LOGIC (GỌI TRỰC TIẾP GOOGLE KHÔNG QUA THƯ VIỆN)
+# XỬ LÝ KẾT NỐI (LOGIC)
 # =========================================================
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Hiển thị lịch sử
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Xử lý tin nhắn mới
-if prompt := st.chat_input("Nhập câu hỏi của bạn..."):
+if prompt := st.chat_input("Nhập nội dung..."):
     
     if not api_key:
-        st.warning("Vui lòng nhập API Key!")
+        st.warning("Chưa nhập API Key!")
         st.stop()
 
-    # Hiển thị tin nhắn người dùng
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # --- ĐOẠN MÃ KẾT NỐI TRỰC TIẾP ---
     try:
         with st.chat_message("assistant"):
-            with st.spinner("Văn Sĩ Số đang suy nghĩ..."):
+            with st.spinner("Đang kết nối..."):
                 
-                # 1. Chuẩn bị dữ liệu gửi đi
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+                # Tạo URL dựa trên phiên bản đã chọn
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_choice}:generateContent?key={api_key}"
                 headers = {'Content-Type': 'application/json'}
                 
-                # Chuyển đổi lịch sử chat sang định dạng JSON của Google
-                contents_payload = []
+                contents = []
                 for msg in st.session_state.messages:
                     role = "user" if msg["role"] == "user" else "model"
-                    contents_payload.append({"role": role, "parts": [{"text": msg["content"]}]})
+                    contents.append({"role": role, "parts": [{"text": msg["content"]}]})
                 
-                # Thêm chỉ dẫn hệ thống vào ngữ cảnh
-                final_payload = {
-                    "contents": contents_payload,
-                    "system_instruction": {"parts": [{"text": f"[{mode.upper()}] {SYSTEM_PROMPT}"}]}
+                payload = {
+                    "contents": contents,
+                    # Gemini Pro đôi khi kén cấu trúc system_instruction, ta đưa thẳng vào prompt
+                    "generationConfig": {"temperature": 0.7}
                 }
 
-                # 2. Gửi yêu cầu (POST Request)
-                response = requests.post(url, headers=headers, json=final_payload)
+                # Gửi yêu cầu
+                response = requests.post(url, headers=headers, json=payload)
                 
-                # 3. Xử lý kết quả trả về
                 if response.status_code == 200:
                     result = response.json()
-                    # Lấy nội dung văn bản từ phản hồi
-                    ai_response = result['candidates'][0]['content']['parts'][0]['text']
-                    st.markdown(ai_response)
-                    st.session_state.messages.append({"role": "assistant", "content": ai_response})
+                    # Xử lý trường hợp Google trả về cấu trúc khác nhau
+                    try:
+                        ans = result['candidates'][0]['content']['parts'][0]['text']
+                    except:
+                        ans = "AI không phản hồi nội dung. Hãy thử câu hỏi khác."
+                        
+                    st.markdown(ans)
+                    st.session_state.messages.append({"role": "assistant", "content": ans})
                 else:
-                    # Nếu lỗi, in chi tiết lỗi từ Google để dễ sửa
-                    st.error(f"Lỗi kết nối (Mã {response.status_code}):")
-                    st.code(response.text)
-                    st.info("Hãy kiểm tra lại API Key xem đã đúng chưa nhé!")
+                    # In lỗi rõ ràng để xử lý
+                    err_msg = response.text
+                    st.error(f"Lỗi (Mã {response.status_code}): {err_msg}")
+                    if response.status_code == 404:
+                        st.warning(f"👉 Tài khoản của thầy/cô không dùng được bản {model_choice}. Hãy đổi sang bản kia ở cột bên trái!")
+                    elif response.status_code == 429:
+                        st.warning("👉 API Key này đã hết hạn mức miễn phí hôm nay. Hãy tạo Key từ Gmail khác.")
 
     except Exception as e:
-        st.error(f"Đã xảy ra lỗi: {e}")
+        st.error(f"Lỗi hệ thống: {e}")
